@@ -21,51 +21,45 @@ supported_instructions = [
     X86_INS_XOR,
 ]
 
-def _get_execve_offset(filename):
-    with open(filename, 'rb') as f:
-        elffile = ELFFile(f)
-        dynsym_sec = elffile.get_section_by_name('.dynsym')
-        if not dynsym_sec:
-            raise Exception('.dynsym section is not found')
-        sym_list = dynsym_sec.get_symbol_by_name('execve')
-        for sym in sym_list: # sym_list contains only one item
-            return sym['st_value']
+def _get_execve_offset(elffile):
+    dynsym_sec = elffile.get_section_by_name('.dynsym')
+    if not dynsym_sec:
+        raise Exception('.dynsym section is not found')
+    sym_list = dynsym_sec.get_symbol_by_name('execve')
+    for sym in sym_list: # sym_list contains only one item
+        return sym['st_value']
 
-def _load_code(filename):
+def _load_code(elffile):
     '''
     This function extracts code from an ELF file.
     '''
-    with open(filename, 'rb') as f:
-        elffile = ELFFile(f)
-        text_section = elffile.get_section_by_name('.text')
-        if not text_section:
-            raise Exception('.text section is not found')
-        return text_section.data()
+    text_section = elffile.get_section_by_name('.text')
+    if not text_section:
+        raise Exception('.text section is not found')
+    return text_section.data()
 
-def _get_code_offset(filename):
+def _get_code_offset(elffile):
     '''
     This function returns an offset to .text section
     '''
-    with open(filename, 'rb') as f:
-        elffile = ELFFile(f)
-        text_section = elffile.get_section_by_name('.text')
-        if not text_section:
-            raise Exception('.text section is not found')
-        return text_section['sh_addr']
+    text_section = elffile.get_section_by_name('.text')
+    if not text_section:
+        raise Exception('.text section is not found')
+    return text_section['sh_addr']
 
-def _binsh_offset(filename):
+def _binsh_offset(fobj):
     '''
     This function finds "/bin/sh" in the file and returns its offset.
     '''
-    with open(filename, 'rb') as f:
-        data = f.read()
+    data = fobj.read()
     return data.find(b'/bin/sh\x00')
 
 def _has_binsh_assignment(inst, binsh):
     '''
     If a given instruction assigns "/bin/sh" to rdi,
     this function returns True.
-    Note: I assume that assignments look like "lea rdi, [rip+<offset>]"
+    Note: I assume that all "/bin/sh" assignments
+    look like "lea rdi, [rip+<offset>]"
     '''
     # check whether this instruction is lea or not
     if inst.id != X86_INS_LEA:
@@ -130,7 +124,7 @@ def _generate_one_gadget(code, offset, binsh, execve_addr):
     instruction_list = list(md.disasm(code, offset))
 
     # build a table to convert address to index
-    jmp_addr_table = {}
+    jmp_addr_table = [None for i in range(instruction_list[-1].address+10)]
     for i, inst in enumerate(instruction_list):
         jmp_addr_table[inst.address] = i
 
@@ -148,11 +142,12 @@ def generate_one_gadget(filename):
     This is the main function of this library,
     which computes offsets to one-gadget and returns them as iterators.
     '''
-    # TODO: integrate file open
-    code   = _load_code(filename)
-    offset = _get_code_offset(filename)
-    binsh  = _binsh_offset(filename)
-    execve_addr = _get_execve_offset(filename)
+    with open(filename, 'rb') as f:
+        binsh  = _binsh_offset(f)
+        elffile = ELFFile(f)
+        code   = _load_code(elffile)
+        offset = _get_code_offset(elffile)
+        execve_addr = _get_execve_offset(elffile)
     for i in _generate_one_gadget(code, offset, binsh, execve_addr):
         yield i
 
