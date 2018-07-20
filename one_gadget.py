@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # TODO: check constraints before and after the assignments
+# TODO: cross reference
 
 from capstone import *
 from capstone.x86 import *
@@ -124,7 +125,7 @@ def _generate_one_gadget(code, offset, binsh, execve_addr):
     instruction_list = list(md.disasm(code, offset))
 
     # build a table to convert address to index
-    jmp_addr_table = [None for i in range(instruction_list[-1].address+10)]
+    jmp_addr_table = {}
     for i, inst in enumerate(instruction_list):
         jmp_addr_table[inst.address] = i
 
