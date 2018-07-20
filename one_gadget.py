@@ -97,7 +97,7 @@ def _has_execve_before_rdi_changes(inst_list, begin, jmp_addr_table, execve_addr
     while True:
         inst = inst_list[index]
         if inst.id == X86_INS_JMP:
-            operand = inst.operands[0]
+            operand = inst.operands[0] # FIXME: operad is not always be an immediate value
             next_addr = operand.imm
             index = jmp_addr_table[next_addr]
         elif inst.id == X86_INS_CALL: # call must be execve
@@ -118,6 +118,17 @@ def _has_execve_before_rdi_changes(inst_list, begin, jmp_addr_table, execve_addr
         else: # unsupported instructions
             return False
 
+def _build_cross_reference(inst_list, xreference_table):
+    for inst in inst_list:
+        if inst.id != X86_INS_JMP or inst.operands[0].type != X86_OP_IMM:
+            continue
+        dst = inst.operands[0].imm
+        src = inst.address
+        if dst in xreference_table:
+            xreference_table[dst].append(src)
+        else:
+            xreference_table[dst] = [src]
+
 def _generate_one_gadget(code, offset, binsh, execve_addr):
     md = Cs(CS_ARCH_X86, CS_MODE_64)
     md.syntax = CS_OPT_SYNTAX_INTEL
@@ -128,6 +139,9 @@ def _generate_one_gadget(code, offset, binsh, execve_addr):
     jmp_addr_table = {}
     for i, inst in enumerate(instruction_list):
         jmp_addr_table[inst.address] = i
+
+    xreference_table = {}
+    _build_cross_reference(instruction_list, xreference_table)
 
     for i, inst in enumerate(instruction_list):
         if _has_binsh_assignment(inst, binsh) and \
