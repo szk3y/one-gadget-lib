@@ -1,2 +1,3 @@
+*.txt
 .*.swp
-libc.so.6
+libc/
