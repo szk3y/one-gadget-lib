@@ -365,8 +365,9 @@ def generate_one_gadget_full(filename):
     '''
     This is the main function of this library,
     which computes offset to one-gadget and constraints we have to satisfy.
-    A tuple of offset and constraints is returned as an iterator.
+    A tuple of instruction and constraints is returned as an iterator.
     '''
+    known_constraints = []
     with open(filename, 'rb') as f:
         binsh  = _binsh_offset(f)
         elffile = ELFFile(f)
@@ -375,6 +376,9 @@ def generate_one_gadget_full(filename):
         execve_addr = _get_execve_offset(elffile)
         environ_ptr = _get_environ_ptr(elffile)
     for i, constraints in _generate_one_gadget(code, offset, binsh, execve_addr, environ_ptr):
+        if constraints in known_constraints:
+            continue
+        known_constraints.append(constraints)
         yield i, constraints
 
 def generate_one_gadget(filename):
@@ -382,7 +386,7 @@ def generate_one_gadget(filename):
     This function yields offset to one-gadget.
     '''
     for i, constraint in generate_one_gadget_full(filename):
-        yield i
+        yield i.address
 
 if __name__ == '__main__':
     libc = sys.argv[1] if len(sys.argv) == 2 else '/lib/x86_64-linux-gnu/libc.so.6'
