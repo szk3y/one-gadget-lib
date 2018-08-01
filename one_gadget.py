@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from capstone import *
 from capstone.x86 import *
 from elftools.elf.elffile import ELFFile
@@ -163,7 +161,7 @@ class CpuStateX64:
         self.stack = [None for i in range(MAX_RSP_OFFSET)]
         self.reg[X86_REG_RSP] = ValueX64(None, None)
 
-    def print(self):
+    def info(self):
         for i, r in enumerate(self.reg):
             if not r:
                 continue
@@ -192,20 +190,20 @@ def _is_call_execve(ins, execve_addr):
 
 def _is_one_gadget(cpu, binsh, environ_ptr):
     # RDI == "/bin/sh"
-    if type(cpu.reg[X86_REG_RDI]) != ValueX64 or \
+    if not isinstance(cpu.reg[X86_REG_RDI], ValueX64) or \
             cpu.reg[X86_REG_RDI].base != None or \
             cpu.reg[X86_REG_RDI].offset != binsh:
         return False
     # RSI == [RSP+0xXX]
-    if type(cpu.reg[X86_REG_RSI]) == ValueX64 and \
+    if isinstance(cpu.reg[X86_REG_RSI], ValueX64) and \
             cpu.reg[X86_REG_RSI].base != X86_REG_RSP:
         return False
     # RDX == [RAX] and RAX == [environ_ptr]
-    if type(cpu.reg[X86_REG_RDX]) != ReferenceX64 or \
+    if not isinstance(cpu.reg[X86_REG_RDX], ReferenceX64) or \
             cpu.reg[X86_REG_RDX].base != X86_REG_RAX or \
             cpu.reg[X86_REG_RDX].offset != 0:
         return False
-    if type(cpu.reg[X86_REG_RAX]) != ReferenceX64 or \
+    if not isinstance(cpu.reg[X86_REG_RAX], ReferenceX64) or \
             cpu.reg[X86_REG_RAX].base != None or \
             cpu.reg[X86_REG_RAX].offset not in environ_ptr:
         return False
@@ -280,7 +278,7 @@ def _execute_instructions_before_binsh(cpu, ins_list, begin):
         else:
             if ONE_GADGET_LIB_DEBUG:
                 _print_instruction(ins)
-                cpu.print()
+                cpu.info()
                 raise Exception('Unsupported instruction found')
             else:
                 break
@@ -355,7 +353,7 @@ def _generate_one_gadget(code, offset, binsh, execve_addr, environ_ptr):
         _execute_instructions_after_binsh(cpu, ins_list, i, execve_addr)
         one_gadget_index = _execute_instructions_before_binsh(cpu, ins_list, i)
         #print()
-        #cpu.print()
+        #cpu.info()
         if not _is_one_gadget(cpu, binsh, environ_ptr):
             continue
         yield (ins_list[one_gadget_index], cpu.constraints())
@@ -381,7 +379,7 @@ def generate_one_gadget_full(filename):
 
 def generate_one_gadget(filename):
     '''
-    This function returns only offset.
+    This function yields offset to one-gadget.
     '''
     for i, constraint in generate_one_gadget_full(filename):
         yield i
