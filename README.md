@@ -13,13 +13,13 @@ One-gadget-lib works with both python2 and python3.
 You can install these requrements by typing following commands.
 
 ```bash
-pip3 install --user capstone pyelftools
+pip3 install capstone pyelftools
 ```
 
 or
 
 ```bash
-pip install --user capstone pyelftools
+pip install capstone pyelftools
 ```
 
 ## Usage
