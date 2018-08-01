@@ -3,8 +3,10 @@
 from capstone import *
 from capstone.x86 import *
 from elftools.elf.elffile import ELFFile
+import sys
 
 MAX_RSP_OFFSET = 0x200
+ONE_GADGET_LIB_DEBUG = False
 
 # Most practical gadgets have simple constraints.
 # So I support only these instructions.
@@ -256,24 +258,32 @@ def _execute_instructions_before_binsh(cpu, ins_list, begin):
             elif ins.operands[0].type == X86_OP_MEM:
                 pass
             else:
-                raise Exception('Unsupported mov instruction')
+                if ONE_GADGET_LIB_DEBUG:
+                    raise Exception('Unsupported mov instruction')
+                else:
+                    break
             if ins.operands[1].type == X86_OP_REG:
                 src = ins.operands[0].reg
                 cpu.reg[dst] = ValueX64(src, 0)
             elif ins.operands[1].type == X86_OP_MEM:
                 base = ins.operands[1].mem.base
                 if cpu.register_is_filled(cpu.reg[base]):
-                    raise Exception('Unsupported mov instruction')
-                    break # prevent infinite loop in cpu.is_filled()
+                    if ONE_GADGET_LIB_DEBUG:
+                        raise Exception('Unsupported mov instruction')
+                    else:
+                        break
                 offset = ins.operands[1].mem.disp
                 if base == X86_REG_RIP:
                     base = None
                     offset = offset + ins.address + ins.size
                 cpu.reg[dst] = ReferenceX64(base, offset)
         else:
-            _print_instruction(ins)
-            cpu.print()
-            raise Exception('Unsupported instruction found')
+            if ONE_GADGET_LIB_DEBUG:
+                _print_instruction(ins)
+                cpu.print()
+                raise Exception('Unsupported instruction found')
+            else:
+                break
         index = index - 1
         ins = ins_list[index]
     return index + 1 # index of one-gadget
@@ -305,7 +315,10 @@ def _execute_instructions_after_binsh(cpu, ins_list, begin, execve_addr):
             elif ins.operands[0].type == X86_OP_MEM:
                 pass # ignore mov to memory
             else:
-                raise Exception('Unsupported mov instruction')
+                if ONE_GADGET_LIB_DEBUG:
+                    raise Exception('Unsupported mov instruction')
+                else:
+                    break
             # second operand and assignment
             if ins.operands[1].type == X86_OP_REG:
                 src = ins.operands[1].reg
@@ -318,8 +331,10 @@ def _execute_instructions_after_binsh(cpu, ins_list, begin, execve_addr):
                     base = None
                 cpu.reg[dst] = ReferenceX64(base, offset)
         else:
-            _print_instruction(ins)
-            raise Exception('Unknown instruction found')
+            if ONE_GADGET_LIB_DEBUG:
+                _print_instruction(ins)
+                raise Exception('Unknown instruction found')
+            break
         index = index + 1
         ins = ins_list[index]
 
@@ -372,7 +387,7 @@ def generate_one_gadget(filename):
         yield i
 
 if __name__ == '__main__':
-    default_libc = '/lib/x86_64-linux-gnu/libc.so.6'
-    for i, constraint in generate_one_gadget_full(default_libc):
+    libc = sys.argv[1] if len(sys.argv) == 2 else '/lib/x86_64-linux-gnu/libc.so.6'
+    for i, constraint in generate_one_gadget_full(libc):
         _print_instruction(i)
         print(constraint)
