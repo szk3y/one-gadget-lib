@@ -1,5 +1,6 @@
 # one-gadget-lib
 [![Build Status](https://travis-ci.org/szk3y/one-gadget-lib.svg?branch=master)](https://travis-ci.org/szk3y/one-gadget-lib)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 One-gadget is code that invokes "/bin/sh" without any arguments, so all you need is jump to its address.
 This library provides the function to find offset to one-gadget in libc.
