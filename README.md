@@ -7,21 +7,22 @@ This library provides the function to find offset to one-gadget in libc.
 
 One-gadget-lib works with both python2 and python3.
 
-## Requirements
-- capstone
-- pyelftools
-
-You can install these requrements by typing following commands.
-
-```bash
-pip3 install capstone pyelftools
+## Install
+```
+pip install one_gadget
 ```
 
 or
 
-```bash
-pip install capstone pyelftools
 ```
+pip3 install one_gadget
+```
+
+## Dependencies
+- capstone
+- pyelftools
+
+However, you don't have to install them explicitly.
 
 ## Usage
 
@@ -30,17 +31,11 @@ from one_gadget import generate_one_gadget
 
 path_to_libc = '/lib/x86_64-linux-gnu/libc.so.6'
 
-for i in generate_one_gadget(path_to_libc):
-    print(i)
+for offset in generate_one_gadget(path_to_libc):
+    print(offset)
 ```
 
-Also, you can use it from your shell.
-
-```bash
-python ./one_gadget.py /lib/x86_64-linux-gnu/libc.so.6
-```
-
-## Future work
+## Future works
 - Support ARM
 - Support complex case like this:
 ```
