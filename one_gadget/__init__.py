@@ -3,8 +3,25 @@ from capstone.x86 import *
 from elftools.elf.elffile import ELFFile
 import sys
 
+
+NUMBER_OF_CANDIDATES = 20
 MAX_RSP_OFFSET = 0x200
 ONE_GADGET_LIB_DEBUG = False
+
+
+# add
+# call
+# jmp
+# lea
+# mov
+# nop
+# push
+# sub
+# xor
+# movq
+# movaps
+# movhps
+
 
 # Most practical gadgets have simple constraints.
 # So I support only these instructions.
@@ -80,25 +97,9 @@ def _is_binsh_assignment(instruction, binsh):
     if instruction.id != X86_INS_LEA:
         return False
 
-    if len(instruction.operands) != 2:  # must be True
-        raise Exception("Invalid lea instruction")
-    operand0 = instruction.operands[0]
-    operand1 = instruction.operands[1]
-
-    # check the first operand
-    if operand0.type != X86_OP_REG or operand0.reg != X86_REG_RDI:
-        return False
-
-    # check the second operand
-    if operand1.type != X86_OP_MEM:
-        return False
-    if operand1.mem.base == 0:
-        return False
-    if operand1.mem.disp == 0:
-        return False
-    if operand1.mem.base != X86_REG_RIP:
-        return False
-    if instruction.size + instruction.address + operand1.mem.disp != binsh:
+    # check op_str looks like 'rdi, [rip+<offset>]'
+    if instruction.op_str != 'rdi, [rip + 0x%x]' % \
+            (binsh - instruction.address - instruction.size):
         return False
 
     return True
@@ -108,26 +109,32 @@ def _has_execve_before_rdi_changes(instruction_list, begin, execve_addr):
     '''
     Determine that the potential gadget calls execve before rdi changes.
     '''
-    index = begin+1  # skip rdi = "/bin/sh";
-    while True:
-        instruction = instruction_list[index]
+    for instruction in instruction_list[begin+1:]:  # skip rdi = "/bin/sh";
         if instruction.id == X86_INS_CALL:
-            operand = instruction.operands[0]
-            if operand.type != X86_OP_IMM:
-                return False
-            if operand.imm == execve_addr:  # FIXME: sigaction can be called
+            # 'call execve' is the end of the block
+            if hex(execve_addr) == instruction.op_str:
                 return True
+            # other call instructions may change rdi
             else:
                 return False
-        elif instruction.id in supported_instructions:
-            # when rdi is modified
-            if len(instruction.operands) == 2 and \
-                    instruction.operands[0].type == X86_OP_REG and \
-                    instruction.operands[0].reg == X86_REG_RDI:
-                return False
-            index = index + 1
-        else:  # unsupported instructions
+        # When rdi is in the destination operand, it will be changed
+        elif instruction.op_str.startswith('rdi'):
             return False
+        # FIXME: jmp should be avoided
+
+
+def _linear_search_execve(instruction_list, begin, execve_addr):
+    '''
+    Returns the address of the instruction
+    below the first 'call execve'.
+    '''
+    prev_instruction = None
+    for instruction in instruction_list[begin:]:
+        if prev_instruction is not None and \
+                prev_instruction.id == X86_INS_CALL and \
+                prev_instruction.op_str == hex(execve_addr):
+            return instruction.address
+        prev_instruction = instruction
 
 
 class ValueX64:
@@ -199,10 +206,9 @@ class CpuStateX64:
         return '[rsp + {}] == 0'.format(hex(self.reg[X86_REG_RSI].offset))
 
 
-def _is_call_execve(ins, execve_addr):
-    return ins.id == X86_INS_CALL and \
-           ins.operands[0].type == X86_OP_IMM and \
-           ins.operands[0].imm == execve_addr
+def _is_call_execve(instruction, execve_addr):
+    return instruction.id == X86_INS_CALL and \
+            hex(execve_addr) == instruction.op_str
 
 
 def _is_one_gadget(cpu, binsh, environ_ptr):
@@ -307,7 +313,7 @@ def _execute_instructions_before_binsh(cpu, instruction_list, begin):
     return index + 1  # index of one-gadget
 
 
-def _execute_instructions_after_binsh(
+def _execute_instructions_between_binsh_and_execve(
         cpu, instruction_list, begin, execve_addr):
     '''
     According to my analysis, most one-gadgets use only lea and mov.
@@ -363,7 +369,7 @@ def _execute_instructions_after_binsh(
 def _generate_one_gadget(code, offset, binsh, execve_addr, environ_ptr):
     md = Cs(CS_ARCH_X86, CS_MODE_64)
     md.syntax = CS_OPT_SYNTAX_INTEL
-    md.detail = True
+    md.detail = False
     instruction_list = list(md.disasm(code, offset))
 
     for i, instruction in enumerate(instruction_list):
@@ -372,16 +378,32 @@ def _generate_one_gadget(code, offset, binsh, execve_addr, environ_ptr):
         if not _has_execve_before_rdi_changes(
                 instruction_list, i, execve_addr):
             continue
-        if _has_complex_instructions(instruction_list, i, execve_addr):
+
+        # more detailed disassembly
+        first_addr = instruction_list[i-NUMBER_OF_CANDIDATES].address
+        last_addr = \
+            _linear_search_execve(instruction_list, i, execve_addr)
+        md.detail = True
+        detailed_instruction_list = list(
+            md.disasm(code[first_addr-offset:last_addr-offset], first_addr))
+
+        if _has_complex_instructions(
+                detailed_instruction_list, NUMBER_OF_CANDIDATES, execve_addr):
             continue
-        cpu = CpuStateX64()
-        _execute_instructions_after_binsh(
-                cpu, instruction_list, i, execve_addr)
-        one_gadget_index = \
-            _execute_instructions_before_binsh(cpu, instruction_list, i)
+
+        cpu = CpuStateX64()  # TODO: replace with unicorn emulator
+        _execute_instructions_between_binsh_and_execve(
+            cpu, detailed_instruction_list, NUMBER_OF_CANDIDATES, execve_addr)
+        one_gadget_index = _execute_instructions_before_binsh(
+            cpu, detailed_instruction_list, NUMBER_OF_CANDIDATES)
         if not _is_one_gadget(cpu, binsh, environ_ptr):
             continue
-        yield (instruction_list[one_gadget_index], cpu.constraints())
+        yield (detailed_instruction_list[one_gadget_index], cpu.constraints())
+
+
+def _print_instruction_list(ilist):
+    for i in ilist:
+        _print_instruction(i)
 
 
 def _print_instruction(i):
@@ -425,5 +447,5 @@ if __name__ == '__main__':
     else:
         libc = '/lib/x86_64-linux-gnu/libc.so.6'
     for instruction, constraint in generate_one_gadget_full(libc):
-        _print_instruction(istruction)
+        _print_instruction(instruction)
         print(constraint)
