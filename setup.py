@@ -10,7 +10,7 @@ install_requires = [
 
 setuptools.setup(
     name='one_gadget',
-    version='1.0.6',
+    version='1.1.0',
     author='szk3y',
     install_requires=install_requires,
     author_email='d4tt423@gmail.com',
